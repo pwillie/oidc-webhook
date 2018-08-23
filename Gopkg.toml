@@ -41,9 +41,9 @@
   name = "github.com/namsral/flag"
   version = "1.7.4-pre"
 
-[prune]
-  go-tests = true
-  unused-packages = true
+# [prune]
+#   go-tests = true
+#   unused-packages = true
 
 [[constraint]]
   name = "github.com/coreos/etcd"
