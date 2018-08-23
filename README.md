@@ -62,3 +62,4 @@ Clearly there aren't a lot of tests here yet.  Hopefully that'll change soon.
 [ ] Explain ExternalUrl  
 [ ] Expand hashing to full encryption  
 [ ] Make logging consistent  
+[ ] We use OKTA, so maybe add https://github.com/okta/okta-jwt-verifier-golang for jwt verification  
