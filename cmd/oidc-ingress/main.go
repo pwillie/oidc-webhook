@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -22,17 +22,25 @@ const (
 )
 
 var (
-	clientConfigs   string
-	listenAddress   string
-	internalAddress string
-	versionFlag     bool
+	clientConfigs      string
+	listenAddress      string
+	internalAddress    string
+	etcdClusterAddress string
+	externalURL        string
+	versionFlag        bool
+	debug              bool
 )
+
+var logger logrus.Logger
 
 func init() {
 	flag.StringVar(&clientConfigs, "clients", "", "OIDC clients config expressed in yaml")
 	flag.StringVar(&listenAddress, "listen", ":8000", "Listen address")
 	flag.StringVar(&internalAddress, "internal", ":9000", "Internal listen address")
+	flag.StringVar(&etcdClusterAddress, "etcd", "", "The etcd cluster to use for redirect token storage.")
+	flag.StringVar(&externalURL, "externalUrl", "", "The url that the auth service is being served on.")
 	flag.BoolVar(&versionFlag, "version", false, "Version")
+	flag.BoolVar(&debug, "debug", false, "Turn on debug logging.")
 }
 
 func main() {
@@ -47,6 +55,9 @@ func main() {
 	// it to use a custom JSONFormatter. See the logrus docs for how to
 	// configure the backend at github.com/sirupsen/logrus
 	logger := logrus.New()
+	if debug {
+		logger.Level = logrus.DebugLevel
+	}
 	logger.Formatter = &logrus.JSONFormatter{
 		// disable, as we set our own
 		DisableTimestamp: true,
@@ -62,13 +73,14 @@ func main() {
 	// the server - look lower.
 	r := handlers.NewRouter(logger)
 
-	oidc, err := handlers.NewOidcHandler(clientConfigs)
+	stateStorer := handlers.NewEtcdStateStorer([]string{strings.TrimSpace(etcdClusterAddress)}, logger)
+	oidc, err := handlers.NewOidcHandler(clientConfigs, strings.TrimSpace(externalURL), stateStorer, logger)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to initialise OIDC handler")
 	}
-	r.Get("/auth/verify/{clientid}", oidc.VerifyHandler)
-	r.Get("/auth/signin/{clientid}", oidc.SigninHandler)
-	r.Get("/auth/callback/{clientid}", oidc.CallbackHandler)
+	r.Get("/auth/verify/{profile}", oidc.VerifyHandler)
+	r.Get("/auth/signin/{profile}", oidc.SigninHandler)
+	r.Get("/auth/callback", oidc.CallbackHandler)
 
 	logger.Infof("Starting server at: %s", listenAddress)
 	srv := http.Server{Addr: listenAddress, Handler: chi.ServerBaseContext(baseCtx, r)}
@@ -87,7 +99,7 @@ func main() {
 	go func() {
 		for range c {
 			// sig is a ^C, handle it
-			fmt.Println("shutting down..")
+			logger.Printf("shutting down..")
 
 			// first valv
 			valv.Shutdown(20 * time.Second)
@@ -103,7 +115,7 @@ func main() {
 			// verify, in worst case call cancel via defer
 			select {
 			case <-time.After(21 * time.Second):
-				fmt.Println("not all connections done")
+				logger.Println("not all connections done")
 			case <-ctx.Done():
 
 			}
