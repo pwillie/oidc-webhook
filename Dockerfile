@@ -1,5 +1,5 @@
 # Build Stage
-FROM golang:1.9.2-alpine3.7 AS build-stage
+FROM golang:1.10-alpine AS build-stage
 
 LABEL app="build-oidc-ingress"
 LABEL REPO="https://github.com/pwillie/oidc-ingress"
@@ -22,7 +22,7 @@ ADD . /gopath/src/github.com/pwillie/oidc-ingress
 RUN make get-deps && make build-alpine
 
 # Final Stage (pwillie/oidc-ingress)
-FROM alpine:3.7
+FROM alpine:3.8
 
 ARG GIT_COMMIT
 ARG VERSION
@@ -30,14 +30,9 @@ LABEL REPO="https://github.com/pwillie/oidc-ingress"
 LABEL GIT_COMMIT=$GIT_COMMIT
 LABEL VERSION=$VERSION
 
-# Because of https://github.com/docker/docker/issues/14914
-ENV PATH=$PATH:/opt/oidc-ingress/bin
-
 RUN apk add -U -q --no-progress ca-certificates
 
-WORKDIR /opt/oidc-ingress/bin
+COPY --from=build-stage /gopath/src/github.com/pwillie/oidc-ingress/bin/oidc-ingress /usr/bin/
+RUN chmod +x /usr/bin/oidc-ingress
 
-COPY --from=build-stage /gopath/src/github.com/pwillie/oidc-ingress/bin/oidc-ingress /opt/oidc-ingress/bin/
-RUN chmod +x /opt/oidc-ingress/bin/oidc-ingress
-
-ENTRYPOINT [ "/opt/oidc-ingress/bin/oidc-ingress" ] 
+ENTRYPOINT [ "/usr/bin/oidc-ingress" ] 
