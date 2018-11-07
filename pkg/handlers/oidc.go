@@ -308,8 +308,10 @@ func (o Oidc) SigninHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	o.logger.WithFields(logrus.Fields{
-		"method":  "SigninHandler",
-		"profile": profile,
+		"method":         "SigninHandler",
+		"profile":        profile,
+		"redirectBackTo": redirectTo,
+		"stateToken":     state,
 	}).Info("Authentication required - redirecting.")
 
 	http.Redirect(w, r, config.oAuth2Config(fmt.Sprintf("%v/auth/callback", o.externalURL)).AuthCodeURL(state), http.StatusFound)
