@@ -14,7 +14,7 @@ help:
 	@echo
 	@echo 'Usage:'
 	@echo '    make build           Compile the project.'
-	@echo '    make get-deps        runs glide install, mostly used for ci.'
+	@echo '    make get-deps        runs go mod download, mostly used for ci.'
 	@echo '    make build-alpine    Compile optimized for alpine linux.'
 	@echo '    make package         Build final docker image with just the go binary inside'
 	@echo '    make tag             Tag image created by package with latest, git commit and version'
@@ -29,7 +29,7 @@ build:
 	go build -ldflags "-X main.GitCommit=${GIT_COMMIT}${GIT_DIRTY} -X main.VersionPrerelease=DEV" -o bin/${BIN_NAME} cmd/**/*.go
 
 get-deps:
-	dep ensure
+	go mod download
 
 build-alpine:
 	@echo "building ${VERSION}"
@@ -58,3 +58,5 @@ clean:
 test:
 	go test -v ./...
 
+check-quality:
+	go test -cover -v ./...
