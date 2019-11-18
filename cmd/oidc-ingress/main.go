@@ -108,7 +108,7 @@ func StartServer(logger *logrus.Logger, options Options) {
 	go func() {
 		for range c {
 			// sig is a ^C, handle it
-			logger.Printf("shutting down..")
+			logger.Println("shutting down..")
 
 			// first valv
 			valv.Shutdown(20 * time.Second)
