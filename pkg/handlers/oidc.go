@@ -16,6 +16,7 @@ import (
 )
 
 type (
+	// OidcClient is the configuration data for a client
 	OidcClient struct {
 		Name             string
 		Provider         *oidc.Provider
@@ -28,6 +29,7 @@ type (
 		CookieSecret     string
 		logger           *logrus.Logger
 	}
+	// Oidc is the configuration data
 	Oidc struct {
 		clients     map[string]*OidcClient
 		stateStorer StateStorer
@@ -36,6 +38,7 @@ type (
 	}
 )
 
+// StateStorer is the contract used for storing state information temporarily
 type StateStorer interface {
 	SaveRedirectURIForClient(string, string) (string, error)
 	GetRedirectURI(string) (string, string, error)
@@ -106,13 +109,16 @@ func NewOidcHandler(config string, externalURL string, stateStorer StateStorer, 
 }
 
 // helpers
-
-func (c OidcClient) verifyToken(token string) error {
+var verify = func(token string, c OidcClient) error {
 	idTokenVerifier := c.Provider.Verifier(
 		&oidc.Config{ClientID: c.ClientID, SupportedSigningAlgs: []string{"RS256"}},
 	)
 	_, err := idTokenVerifier.Verify(context.Background(), token)
 	return err
+}
+
+func (c OidcClient) verifyToken(token string) error {
+	return verify(token, c)
 }
 
 func (c OidcClient) redirectURL(r *http.Request) string {
@@ -132,13 +138,6 @@ func (c OidcClient) redirectURL(r *http.Request) string {
 		}
 	}
 
-	// host := r.Host
-	// if h := r.Header.Get("X-Original-Url"); h != "" {
-	// 	// u, err := url.Parse(h)
-	// 	// if err == nil {
-	// 	// 	host = u.Hostname()
-	// 	// }
-	// }
 	var rd string
 	if !c.NoRedirect {
 		rd = r.URL.Query().Get("rd")
@@ -152,18 +151,26 @@ func (c OidcClient) oAuth2Config(redirect string) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     c.ClientID,
 		ClientSecret: c.ClientSecret,
-		Endpoint:     c.Provider.Endpoint(),
+		Endpoint:     getEndpoint(c),
 		RedirectURL:  redirect,
 		Scopes:       c.Scopes,
 	}
 }
 
+var getEndpoint = func(c OidcClient) oauth2.Endpoint {
+	return c.Provider.Endpoint()
+}
+
 // Handlers
+
+var getProfile = func(r *http.Request, paramName string) string {
+	return chi.URLParam(r, "profile")
+}
 
 // VerifyHandler takes care of verifying if the user is authenticated.VerifyHandler
 // Id does this by querying a cookie named after the specific config profile name.
 func (o Oidc) VerifyHandler(w http.ResponseWriter, r *http.Request) {
-	profile := chi.URLParam(r, "profile")
+	profile := getProfile(r, "profile")
 	o.logger.WithFields(logrus.Fields{
 		"method":  "VerifyHandler",
 		"profile": profile,
@@ -191,7 +198,7 @@ func (o Oidc) VerifyHandler(w http.ResponseWriter, r *http.Request) {
 			"error":  err,
 		}).Debug("Decode cookie")
 		if token != "" {
-			config.verifyToken(token)
+			err = config.verifyToken(token)
 			if err == nil {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -209,7 +216,7 @@ func (o Oidc) VerifyHandler(w http.ResponseWriter, r *http.Request) {
 
 // SigninHandler signs a user in via the oauth provider set in the signin request
 func (o Oidc) SigninHandler(w http.ResponseWriter, r *http.Request) {
-	profile := chi.URLParam(r, "profile")
+	profile := getProfile(r, "profile")
 	o.logger.WithFields(logrus.Fields{
 		"method":  "SigninHandler",
 		"profile": profile,
@@ -225,6 +232,7 @@ func (o Oidc) SigninHandler(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, "Configuration error")
+		return
 	}
 
 	// The request was ok, figure out if we are already signed in, and if not, redirect to our oauth provider.
@@ -267,7 +275,7 @@ func (o Oidc) SigninHandler(w http.ResponseWriter, r *http.Request) {
 		"error":   err,
 	}).Debug("Finding Cookie")
 
-	if err != nil && cookie != nil {
+	if err == nil && cookie != nil {
 		hashKey := []byte(config.CookieSecret)
 		s := secureCookie.New(hashKey, nil)
 
@@ -282,7 +290,7 @@ func (o Oidc) SigninHandler(w http.ResponseWriter, r *http.Request) {
 		}).Debug("Decoded cookie value")
 
 		if token != "" {
-			config.verifyToken(token)
+			err = config.verifyToken(token)
 			if err == nil {
 				if r.URL.Query().Get("rd") != "" {
 					http.Redirect(w, r, r.URL.Query().Get("rd"), http.StatusFound)
@@ -318,6 +326,14 @@ func (o Oidc) SigninHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+var getOAuth2Token = func(url string, r *http.Request, config *OidcClient) (*oauth2.Token, error) {
+	return config.oAuth2Config(fmt.Sprintf("%v/auth/callback", url)).Exchange(context.Background(), r.URL.Query().Get("code"))
+}
+
+var getIDToken = func(oauth2 *oauth2.Token) string {
+	return oauth2.Extra("id_token").(string)
+}
+
 // CallbackHandler handles the return call from the oauth provider after authentication
 func (o Oidc) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
@@ -350,9 +366,10 @@ func (o Oidc) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, http.StatusText(http.StatusForbidden))
+		return
 	}
 
-	oauth2Token, err := config.oAuth2Config(fmt.Sprintf("%v/auth/callback", o.externalURL)).Exchange(context.Background(), r.URL.Query().Get("code"))
+	oauth2Token, err := getOAuth2Token(o.externalURL, r, config)
 	if err != nil {
 		o.logger.WithFields(logrus.Fields{
 			"method":  "CallbackHandler",
@@ -365,21 +382,12 @@ func (o Oidc) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
-	if !ok {
-		o.logger.WithFields(logrus.Fields{
-			"method":  "CallbackHandler",
-			"profile": profile,
-		}).Error("No id_token field in oauth2 token.")
-
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, "No id_token field in oauth2 token.")
-		return
-	}
+	rawIDToken := getIDToken(oauth2Token)
 	err = config.verifyToken(rawIDToken)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "Failed to verify ID Token: %s", err.Error())
+		return
 	}
 
 	hashKey := []byte(config.CookieSecret)

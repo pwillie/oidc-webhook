@@ -1,5 +1,5 @@
 # Build Stage
-FROM golang:1.10-alpine AS build-stage
+FROM golang:1.13-alpine AS build-stage
 
 LABEL app="build-oidc-ingress"
 LABEL REPO="https://github.com/pwillie/oidc-ingress"

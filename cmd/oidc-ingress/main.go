@@ -21,33 +21,37 @@ const (
 	source = "oidc-ingress"
 )
 
-var (
-	clientConfigs      string
-	listenAddress      string
-	internalAddress    string
-	etcdClusterAddress string
-	externalURL        string
-	versionFlag        bool
-	debug              bool
-)
+// Options command line data
+type Options struct {
+	ClientConfigs      string
+	ListenAddress      string
+	InternalAddress    string
+	StateStorage       string
+	StateRemoteAddress string
+	ExternalURL        string
+	VersionFlag        bool
+	Debug              bool
+}
+
+var options Options
 
 var logger logrus.Logger
 
 func init() {
-	flag.StringVar(&clientConfigs, "clients", "", "OIDC clients config expressed in yaml")
-	flag.StringVar(&listenAddress, "listen", ":8000", "Listen address")
-	flag.StringVar(&internalAddress, "internal", ":9000", "Internal listen address")
-	flag.StringVar(&etcdClusterAddress, "etcd", "", "The etcd cluster to use for redirect token storage.")
-	flag.StringVar(&externalURL, "externalUrl", "", "The url that the auth service is being served on.")
-	flag.BoolVar(&versionFlag, "version", false, "Version")
-	flag.BoolVar(&debug, "debug", false, "Turn on debug logging.")
+	flag.StringVar(&options.ClientConfigs, "clients", "", "OIDC clients config expressed in yaml")
+	flag.StringVar(&options.ListenAddress, "listen", ":8000", "Listen address")
+	flag.StringVar(&options.InternalAddress, "internal", ":9000", "Internal listen address")
+	flag.StringVar(&options.StateRemoteAddress, "redis", "", "The address of the storage cluster.")
+	flag.StringVar(&options.ExternalURL, "externalUrl", "", "The url that the auth service is being served on.")
+	flag.BoolVar(&options.VersionFlag, "version", false, "Version")
+	flag.BoolVar(&options.Debug, "debug", false, "Turn on debug logging.")
 }
 
 func main() {
 	flag.Parse()
 
 	PrintVersion()
-	if versionFlag {
+	if options.VersionFlag {
 		return
 	}
 
@@ -55,14 +59,19 @@ func main() {
 	// it to use a custom JSONFormatter. See the logrus docs for how to
 	// configure the backend at github.com/sirupsen/logrus
 	logger := logrus.New()
-	if debug {
+	if options.Debug {
 		logger.Level = logrus.DebugLevel
 	}
-	logger.Formatter = &logrus.JSONFormatter{
-		// disable, as we set our own
-		DisableTimestamp: true,
-	}
+	// logger.Formatter = &logrus.JSONFormatter{
+	// 	// disable, as we set our own
+	// 	DisableTimestamp: true,
+	// }
 
+	StartServer(logger, options)
+}
+
+// StartServer begins serving the http server that is oidc-auth
+func StartServer(logger *logrus.Logger, options Options) {
 	// Our graceful valve shut-off package to manage code preemption and
 	// shutdown signaling.
 	valv := valve.New()
@@ -73,8 +82,8 @@ func main() {
 	// the server - look lower.
 	r := handlers.NewRouter(logger)
 
-	stateStorer := handlers.NewEtcdStateStorer([]string{strings.TrimSpace(etcdClusterAddress)}, logger)
-	oidc, err := handlers.NewOidcHandler(clientConfigs, strings.TrimSpace(externalURL), stateStorer, logger)
+	stateStorer := handlers.NewRedisStateStorer(strings.TrimSpace(options.StateRemoteAddress), logger)
+	oidc, err := handlers.NewOidcHandler(options.ClientConfigs, strings.TrimSpace(options.ExternalURL), stateStorer, logger)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to initialise OIDC handler")
 	}
@@ -82,8 +91,8 @@ func main() {
 	r.Get("/auth/signin/{profile}", oidc.SigninHandler)
 	r.Get("/auth/callback", oidc.CallbackHandler)
 
-	logger.Infof("Starting server at: %s", listenAddress)
-	srv := http.Server{Addr: listenAddress, Handler: chi.ServerBaseContext(baseCtx, r)}
+	logger.Infof("Starting server at: %s", options.ListenAddress)
+	srv := http.Server{Addr: options.ListenAddress, Handler: chi.ServerBaseContext(baseCtx, r)}
 
 	i := chi.NewRouter()
 	i.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -91,8 +100,8 @@ func main() {
 	})
 	i.Get("/metrics", promhttp.Handler().ServeHTTP)
 
-	logger.Infof("Starting monitoring server at: %s", internalAddress)
-	mon := http.Server{Addr: internalAddress, Handler: chi.ServerBaseContext(baseCtx, i)}
+	logger.Infof("Starting monitoring server at: %s", options.InternalAddress)
+	mon := http.Server{Addr: options.InternalAddress, Handler: chi.ServerBaseContext(baseCtx, i)}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
