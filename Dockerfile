@@ -33,6 +33,12 @@ LABEL VERSION=$VERSION
 RUN apk add -U -q --no-progress ca-certificates
 
 COPY --from=build-stage /gopath/src/github.com/pwillie/oidc-ingress/bin/oidc-ingress /usr/bin/
-RUN chmod +x /usr/bin/oidc-ingress
+
+RUN addgroup -S -g 10005 oidc-ingress && \
+    adduser -S -u 10005 -G oidc-ingress oidc-ingress
+RUN chown -R oidc-ingress /usr/bin/oidc-ingress
+RUN chgrp -R oidc-ingress /usr/bin/oidc-ingress
+RUN chmod -R 774 /usr/bin/oidc-ingress
+USER oidc-ingress
 
 ENTRYPOINT [ "/usr/bin/oidc-ingress" ] 
