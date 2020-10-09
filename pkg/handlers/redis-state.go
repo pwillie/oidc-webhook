@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/go-redis/redis/v7"
 	"github.com/rs/xid"
+	"github.com/sirupsen/logrus"
 )
 
 // RedisState represents a state object for the redis state storer.

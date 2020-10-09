@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/finbourne/oidc-ingress/pkg/handlers"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
 	"github.com/go-chi/valve"
 	"github.com/namsral/flag"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/pwillie/oidc-ingress/pkg/handlers"
+	"github.com/sirupsen/logrus"
 )
 
 const (

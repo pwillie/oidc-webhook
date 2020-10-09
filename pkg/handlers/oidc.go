@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/Sirupsen/logrus"
 	oidc "github.com/coreos/go-oidc"
 	"github.com/ghodss/yaml"
 	"github.com/go-chi/chi"
 	secureCookie "github.com/gorilla/securecookie"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 

@@ -3,10 +3,10 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/render"
+	"github.com/sirupsen/logrus"
 )
 
 func NewRouter(logger *logrus.Logger) *chi.Mux {
